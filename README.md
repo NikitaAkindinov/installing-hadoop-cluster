@@ -33,7 +33,7 @@
 
 ## 1- Подготовка ОС
 ### Команды с правами root
-> login as root user
+> ввойдите под пользователем или с правами root
 
 ``user@debian:~$ su root``
 
@@ -45,64 +45,135 @@
 
 ``root@debian:~# systemctl disable firewalld``
 
-- Измените имя хоста и настройте полное доменное имя (FQDN) (учитывая, что имя хоста и полное доменное имя являются `master-namenode` и `cluster.hdp` соответственно).
+- Измените имя хоста и настройте полное доменное имя (FQDN) (учитывая, что имя хоста и полное доменное имя являются `vm-hdp-0` и `corp` соответственно).
 
 > Отобразите имя хоста, которое было задано во время настройки, на панели gridscale
 
 ``root@debian:~# cat /etc/hostname``
 
-> Измените имя хоста (теперь его можно изменить на любое другое имя – в данном примере master-namenode).
+> Измените имя хоста (теперь его можно изменить на любое другое имя – в данном примере vm-hdp-0).
 
-``root@debian:~# vi /etc/hostname``   --удалите существующее имя и напишите следующее
+``root@debian:~# nano /etc/hostname``   --удалите существующее имя и напишите следующее
 
-    master-namenode
+    vm-hdp-0
 
 > Для того чтобы задать полное доменное имя, в дополнение к вашему собственному полному доменному имени требуется общедоступный IP-адрес сервера. Закомментируйте все имеющиеся строки, поставив перед ними символ `#` или убрав их и добавив следующую строку (заменив IP-адрес адресом сервера).
 
-``root@debian:~# vi /etc/hosts``   --ваш файл должен выглядеть следующим образом
+``root@debian:~# nano /etc/hosts``   --ваш файл должен выглядеть следующим образом
 
-    192.168.1.72    master-namenode.cluster.hdp     master-namenode
+    192.168.252.253    vm-hdp-0.corp     vm-hdp-0
 
 > Изменения вступят в силу после следующего перезапуска – если вы хотите, чтобы изменения были внесены без перезапуска, для этого выполните следующую команду
 
-``root@debian:~# hostname master-namenode``
+``root@debian:~# hostname vm-hdp-0``
 
 | :warning: WARNING          |
 |:---------------------------|
-| Изменение имени хоста с помощью команды `:~# hostname master-namenode` является временным и будет перезаписано при перезагрузке. Чтобы сделать это изменение постоянным, необходимо отредактировать файл `/etc/hostname`. Это не является заменой первого шага.     |
+| Изменение имени хоста с помощью команды `:~# hostname vm-hdp-0` является временным и будет перезаписано при перезагрузке. Чтобы сделать это изменение постоянным, необходимо отредактировать файл `/etc/hostname`. Это не является заменой первого шага.     |
 
 > Проверьте, что имя хоста было успешно отредактировано, набрав
 
 ``root@debian:~# hostname`` --должно вернуться
 
-    master-namenode
+    vm-hdp-0
 
 > Полное доменное имя проверяется с помощью этой команды
 
-``root@debian:~# hostname -f`` --should return
+``root@debian:~# hostname -f`` --должно вернуться
 
-    master-namenode.cluster.hdp
+    vm-hdp-0.corp
+
+- Если для данных добавлен дополнительный диск, то его необходимо отформатировать и примонтировать.
+С помощью команды ``lsblk `` смотрим название нового устройства. Примерный вывод команды ниже:
+>
+    root@vm-hdp-0:~# lsblk 
+    NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+    sda      8:0    0   32G  0 disk 
+    |-sda1   8:1    0 30.3G  0 part /
+    |-sda2   8:2    0    1K  0 part 
+    `-sda5   8:5    0  1.7G  0 part [SWAP]
+    sdb      8:16   0  100G  0 disk 
+    sr0     11:0    1 1024M  0 rom  
+
+Далее необходимо создать раздел (пример для /dev/sdb)
+Открыть fdisk: sudo fdisk /dev/sdb Команды внутри:
+- n — новая раздел
+- p — primary (по умолчанию)
+- Enter для принятия значений начала/конца (весь диск)
+- w — записать изменения и выйти
+
+Получим такой вывод команды ``lsblk ``:
+>
+    root@vm-hdp-0:~# lsblk 
+    NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+    sda      8:0    0   32G  0 disk 
+    |-sda1   8:1    0 30.3G  0 part /
+    |-sda2   8:2    0    1K  0 part 
+    `-sda5   8:5    0  1.7G  0 part [SWAP]
+    sdb      8:16   0  100G  0 disk 
+    `-sdb1   8:17   0  100G  0 part 
+    sr0     11:0    1 1024M  0 rom  
+
+Далее необходимо отформатировать раздел с помощью команды ``mkfs.ext4 -F /dev/sdb1``.
+
+Далее необходимо выполнить следующие действия для монтирования диска.
+
+    sudo mkdir -p /data
+    sudo chown root:root /data
+    sudo chmod 755 /data
+    sudo blkid /dev/sdb1
+    echo 'UUID=4954a41d-b7ad-4596-96c9-8125a8ef2030  /data  ext4  defaults,noatime  0 2' | sudo tee -a /etc/fstab
+    sudo mount -a
+    df -hT /data
+
+Получим такой вывод команды ``lsblk `` и ``df -l``:
+>
+    root@vm-hdp-0:~# lsblk 
+    NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+    sda      8:0    0   32G  0 disk 
+    |-sda1   8:1    0 30.3G  0 part /
+    |-sda2   8:2    0    1K  0 part 
+    `-sda5   8:5    0  1.7G  0 part [SWAP]
+    sdb      8:16   0  100G  0 disk 
+    `-sdb1   8:17   0  100G  0 part /data
+    sr0     11:0    1 1024M  0 rom  
+
+    root@vm-hdp-0:~# df -l
+    Filesystem     1K-blocks    Used Available Use% Mounted on
+    udev             4014888       0   4014888   0% /dev
+    tmpfs             807252     504    806748   1% /run
+    /dev/sda1       31113048 1017264  28490000   4% /
+    tmpfs            4036244       0   4036244   0% /dev/shm
+    tmpfs               5120       0      5120   0% /run/lock
+    tmpfs               1024       0      1024   0% /run/credentials/systemd-journald.service
+    tmpfs            4036248       0   4036248   0% /tmp
+    tmpfs               1024       0      1024   0% /run/credentials/getty@tty1.service
+    tmpfs             807248       8    807240   1% /run/user/0
+    /dev/sdb1      102625208    2072  97363924   1% /data
+
+- Так же рекомендуется для удобства установить последние обновления ``apt update && apt upgrade -y`` и следующие программы 
+``apt install -y mc htop``
 
 - Создать пользователя для Hadoop (рассматривая пользователя hadoop как "hdpuser")
 > Для пользователей ОС Debian войдите в систему от имени пользователя root и выполните следующие действия:
 
-``root@master-namenode:~# apt-get install sudo``
+``root@vm-hdp-0:~# apt update && apt install sudo -y``
 
-``root@master-namenode:~# adduser hdpuser``
+``root@vm-hdp-0:~# adduser hdpuser``
 
-``root@master-namenode:~# usermod -aG sudo hdpuser``  --чтобы добавить пользователя в группу sudo. Это также можно сделать в соответствии с (*), приведенным ниже
+``root@vm-hdp-0:~# usermod -aG sudo hdpuser``  --чтобы добавить пользователя в группу sudo. Это также можно сделать в соответствии с (*), приведенным ниже
 
-``root@master-namenode:~# getent group sudo``  --чтобы проверить, был ли добавлен в группу новый пользователь Debian sudo, более подробную информацию смотрите [здесь][verifsudo].
+``root@vm-hdp-0:~# getent group sudo``  --чтобы проверить, был ли добавлен в группу новый пользователь Debian sudo, более подробную информацию смотрите [здесь][verifsudo].
 
 [verifsudo]: https://phoenixnap.com/kb/create-a-sudo-user-on-debian
 
-``root@master-namenode:~# deluser --remove-home username`` --чтобы удалить пользователя
+``root@vm-hdp-0:~# deluser --remove-home username`` --чтобы удалить пользователя
 
 > Проверка доступа Sudo в Debian
 
-``root@master-namenode:~# su - hdpuser``  --перейдите в учетную запись пользователя, которую вы только что создали
+``root@vm-hdp-0:~# su - hdpuser``  --перейдите в учетную запись пользователя, которую вы только что создали
 
-``hdpuser@master-namenode:~$ sudo whoami``  --запустите любую команду, для которой требуется доступ суперпользователя. Например, это должно указывать на то, что вы являетесь пользователем root.
+``hdpuser@vm-hdp-0:~$ sudo whoami``  --запустите любую команду, для которой требуется доступ суперпользователя. Например, это должно указывать на то, что вы являетесь пользователем root.
 
 ![sudowhoami](/images/sudowhoami.png)
 
@@ -110,32 +181,28 @@
 
 [sudo]: https://www.geek17.com/fr/content/debian-9-stretch-installer-et-configurer-sudo-61
 
-``root@master-namenode:~# visudo -f /etc/sudoers``  --и в нижеприведенном разделе добавьте
+``root@vm-hdp-0:~# visudo -f /etc/sudoers``  --и в нижеприведенном разделе добавьте
 
-    ## Allow root to run any commands anywhere
-    root    ALL=(ALL)    All
-    hdpuser ALL=(ALL)    ALL     ##add this line
+    # User privilege specification
+    root    ALL=(ALL:ALL) ALL
+    hdpuser ALL=(ALL:ALL) ALL
 
 ### Команды от hdpuser
 > login as hdpuser
 
-- Установка SSH сервера (если отсутствует)
+- Установка SSH сервера и rsync, который позволяет удаленно синхронизировать файлы по SSH (если отсутствуют)
 
-``hdpuser@master-namenode:~$ sudo apt-get install ssh``
-
-- Установите rsync, который позволяет удаленно синхронизировать файлы по SSH
-
-``hdpuser@master-namenode:~$ sudo apt-get install rsync``
+``hdpuser@vm-hdp-0:~$ sudo apt install -y ssh rsync``
 
 - Сгенерируйте SSH-ключи и настройте SSH-соединение без пароля между службами Hadoop
 
-``hdpuser@master-namenode:~$ ssh-keygen -t rsa``  --просто нажмите Enter для выбора всех вариантов
+``hdpuser@vm-hdp-0:~$ ssh-keygen -t ed25519``  --просто нажмите Enter для выбора всех вариантов
 
-``hdpuser@master-namenode:~$ cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys``
+``hdpuser@vm-hdp-0:~$ cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys``
 
-``hdpuser@master-namenode:~$ ssh-copy-id -i ~/.ssh/id_rsa.pub hdpuser@master-namenode``  --(вы должны иметь возможность подключаться по ssh, не запрашивая пароль)
+``hdpuser@vm-hdp-0:~$ ssh-copy-id -i ~/.ssh/id_ed25519.pub hdpuser@vm-hdp-0``  --(вы должны иметь возможность подключаться по ssh, не запрашивая пароль)
 
-``hdpuser@master-namenode:~$ ssh hdpuser@master-namenode``
+``hdpuser@vm-hdp-0:~$ ssh hdpuser@vm-hdp-0``
 
     Are you sure you want to continue connecting (yes/no)? yes
 
@@ -151,102 +218,106 @@
   3) Применить изменения перезапустив сервис: ``sudo systemctl restart networking``
   4) Проверить новый IP адрес: ``ip addr show enp0s3``
   5) Перезапустить сервис SSH: ``sudo systemctl restart ssh``
-  6) Повторить SSH подключение: ``ssh hdpuser@192.168.1.72`` or ``ssh hdpuser@master-namenode``
-  7) Выйти из системы ``hdpuser@master-namenode:~$ exit``
+  6) Повторить SSH подключение: ``ssh hdpuser@192.168.1.72`` or ``ssh hdpuser@vm-hdp-0``
+  7) Выйти из системы ``hdpuser@vm-hdp-0:~$ exit``
 
 - Создание необходимых каталогов:
 
-``hdpuser@master-namenode:~$sudo mkdir /var/log/hadoop``
+``hdpuser@vm-hdp-0:~$ sudo mkdir /var/log/hadoop``
 
-``hdpuser@master-namenode:~$ sudo chown -R hdpuser:hdpuser /var/log/hadoop``
+``hdpuser@vm-hdp-0:~$ sudo chown -R hdpuser:hdpuser /var/log/hadoop``
 
-``hdpuser@master-namenode:~$ sudo chmod -R 770 /var/log/hadoop``
+``hdpuser@vm-hdp-0:~$ sudo chmod -R 770 /var/log/hadoop``
 
-``hdpuser@master-namenode:~$ sudo mkdir /bigdata``
+``hdpuser@vm-hdp-0:~$ sudo mkdir /bigdata``
 
-``hdpuser@master-namenode:~$ sudo chown -R hdpuser:hdpuser /bigdata``
+``hdpuser@vm-hdp-0:~$ sudo chown -R hdpuser:hdpuser /bigdata``
 
-``hdpuser@master-namenode:~$ sudo chmod -R 770 /bigdata``
+``hdpuser@vm-hdp-0:~$ sudo chmod -R 770 /bigdata``
 
 ## 2- Установка JDK и Hadoop
 > Ввойти в систему под пользователем hdpuser
 
 ### Установка Java
 
-- Загрузка JDK "[jdk-8u241-Linux-x64.tar.gz][java]", и следуйте инструкциям по установке:
+- Откройте страницу с загрузкой дистрибутивов [JDK 11][java], скопируйте ссылку на дистрибутив и следуйте инструкциям по установке:
 
-[java]: https://www.oracle.com/java/technologies/javase-jdk8-downloads.html
+[java]: https://jdk.java.net/java-se-ri/11-MR3
 
-``hdpuser@master-namenode:~$ cd /bigdata``
+``hdpuser@vm-hdp-0:~$ cd /bigdata`` -- переход в каталог
+
+``wget https://download.java.net/openjdk/jdk11.0.0.2/ri/openjdk-11.0.0.2_linux-x64.tar.gz`` --загружаем дистрибутив для установки
+
+
 
 - Распакуйте архив по пути установки,
 
-``hdpuser@master-namenode:/bigdata$ tar -xzvf jdk-8u241-Linux-x64.tar.gz``
+``hdpuser@vm-hdp-0:/bigdata$ tar -xzvf openjdk-11.0.0.2_linux-x64.tar.gz``
 
 - Настройка переменных среды
 
-``hdpuser@master-namenode:/bigdata$ cd ~``
-
-``hdpuser@master-namenode:~$ vi .bashrc``  --добавьте следующее в конце файла
+``hdpuser@vm-hdp-0:~$ nano ~/.bashrc``  --добавьте следующее в конце файла
 
     # User specific environment and startup programs
     export PATH=$HOME/.local/bin:$HOME/bin:$PATH
 
     # Setup JAVA Environment variables
-    export JAVA_HOME=/bigdata/jdk1.8.0_241
+    export JAVA_HOME=/bigdata/jdk-11.0.0.2
     export PATH=$JAVA_HOME/bin:$PATH
 
-``hdpuser@master-namenode:~$ source .bashrc`` --загрузите .bashrc файл
+``hdpuser@vm-hdp-0:~$ source ~/.bashrc`` --загрузите .bashrc файл
 
 - Установка Java
 
-``hdpuser@master-namenode:~$ sudo update-alternatives --install "/usr/bin/java" "java" "/bigdata/jdk1.8.0_241/bin/java" 0``
+``hdpuser@vm-hdp-0:~$ sudo update-alternatives --install "/usr/bin/java" "java" "/bigdata/jdk-11.0.0.2/bin/java" 0``
 
-``hdpuser@master-namenode:~$ sudo update-alternatives --install "/usr/bin/javac" "javac" "/bigdata/jdk1.8.0_241/bin/javac" 0``
+``hdpuser@vm-hdp-0:~$ sudo update-alternatives --install "/usr/bin/javac" "javac" "/bigdata/jdk-11.0.0.2/bin/javac" 0``
 
-``hdpuser@master-namenode:~$ sudo update-alternatives --install "/usr/bin/javaws" "javaws" "/bigdata/jdk1.8.0_241/bin/javaws" 0``
+``hdpuser@vm-hdp-0:~$ sudo update-alternatives --install "/usr/bin/javaws" "javaws" "/bigdata/jdk-11.0.0.2/bin/javaws" 0`` 
+-- нет такого пакета, возможно можно и без него
 
-``hdpuser@master-namenode:~$ sudo update-alternatives --set java /bigdata/jdk1.8.0_241/bin/java``
+``hdpuser@vm-hdp-0:~$ sudo update-alternatives --set java /bigdata/jdk-11.0.0.2/bin/java``
 
-``hdpuser@master-namenode:~$ sudo update-alternatives --set javac /bigdata/jdk1.8.0_241/bin/javac``
+``hdpuser@vm-hdp-0:~$ sudo update-alternatives --set javac /bigdata/jdk-11.0.0.2/bin/javac``
 
-``hdpuser@master-namenode:~$ sudo update-alternatives --set javaws /bigdata/jdk1.8.0_241/bin/javaws``
+``hdpuser@vm-hdp-0:~$ sudo update-alternatives --set javaws /bigdata/jdk-11.0.0.2/bin/javaws``
+-- нет такого пакета, возможно можно и без него
 
-``hdpuser@master-namenode:~$ java -version``  --проверка версии
+``hdpuser@vm-hdp-0:~$ java -version``  --проверка версии
 
-    hdpuser@master-namenode:~$ java -version
-    java version "1.8.0_241"
-    Java(TM) SE Runtime Environment (build 1.8.0_241-b07)
-    Java HotSpot(TM) 64-Bit Server VM (build 25.241-b07, mixed mode)
+    hdpuser@vm-hdp-0:/bigdata$ java -version
+    openjdk version "11.0.0.2" 2024-07-02
+    OpenJDK Runtime Environment 18.9 (build 11.0.0.2+2-2)
+    OpenJDK 64-Bit Server VM 18.9 (build 11.0.0.2+2-2, mixed mode)
 
 
 ### Установка Hadoop
 
-- Загрузите файл дистрибутива с Hadoop "[hadoop-3.1.2.tar.gz][hadoop]", и следуйте инструкциям по установке:
+- Загрузите файл дистрибутива с [Hadoop][hadoop], и следуйте инструкциям по установке:
 
 [hadoop]: https://hadoop.apache.org/release.html
 
-``hdpuser@master-namenode:~$ cd /bigdata``
+``hdpuser@vm-hdp-0:~$ cd /bigdata``
 
-- Извлеките архив "hadoop-3.1.2.tar.gz",
+``wget https://archive.apache.org/dist/hadoop/common/hadoop-3.4.1/hadoop-3.4.1.tar.gz``
 
-``hdpuser@master-namenode:/bigdata$ tar -zxvf hadoop-3.1.2.tar.gz``
+- Извлеките архив "hadoop-3.4.1.tar.gz",
+
+``hdpuser@vm-hdp-0:/bigdata$ tar -zxvf hadoop-3.4.1.tar.gz``
 
 - Установите следующие переменные среды
 
-``hdpuser@master-namenode:/bigdata$ cd``  --чтобы перейти в свой домашний каталог
-
-``hdpuser@master-namenode:~$ vi .bashrc``  --добавьте следующее после раздела "Переменные среды Java" в файл .bashrc
+``hdpuser@vm-hdp-0:~$ nano ~/.bashrc``  --добавьте следующее после раздела "Переменные среды Java" в файл .bashrc
 
     # Setup Hadoop Environment variables
-    export HADOOP_HOME=/bigdata/hadoop-3.1.2
+    export HADOOP_HOME=/bigdata/hadoop-3.4.1
     export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
     export HADOOP_NAMENODE_OPTS="-XX:+UseParallelGC"
     export HADOOP_MAPRED_HOME=$HADOOP_HOME
     export HADOOP_HDFS_HOME=$HADOOP_HOME
     export HADOOP_COMMON_HOME=$HADOOP_HOME
-    export HADOOP_YARN_HOME=$HADOOP_HOME
-    export YARN_HOME=$HADOOP_HOME
+    #export HADOOP_YARN_HOME=$HADOOP_HOME
+    #export YARN_HOME=$HADOOP_HOME
     export HADOOP_COMMON_LIB_NATIVE_DIR=$HADOOP_HOME/lib/native
     export HADOOP_CLASSPATH=$JAVA_HOME/lib/tools.jar
     export HADOOP_LOG_DIR=/var/log/hadoop
@@ -256,31 +327,38 @@
     export HADOOP_CLASSPATH=$HADOOP_CONF_DIR:$HADOOP_COMMON_HOME/*:$HADOOP_COMMON_HOME/lib/*:$HADOOP_HDFS_HOME/*:$HADOOP_HDFS_HOME/lib/*:$HADOOP_MAPRED_HOME/*:$HADOOP_MAPRED_HOME/lib/*:$HADOOP_YARN_HOME/*:$HADOOP_YARN_HOME/lib/*:$HADOOP_CLASSPATH
 
     # Control Hadoop
-    alias Start_HADOOP='$HADOOP_HOME/sbin/start-dfs.sh;start-yarn.sh;mapred --daemon start historyserver'
-    alias Stop_HADOOP='$HADOOP_HOME/sbin/stop-dfs.sh;stop-yarn.sh;mapred --daemon stop historyserver'
+    alias start_hadoop='$HADOOP_HOME/sbin/start-dfs.sh;start-yarn.sh;'
+    alias stop_hadoop='$HADOOP_HOME/sbin/stop-dfs.sh;stop-yarn.sh;'
+    # Control Hadoop
+    #alias start_hadoop='$HADOOP_HOME/sbin/start-dfs.sh;start-yarn.sh;mapred --daemon start historyserver'
+    #alias stop_hadoop='$HADOOP_HOME/sbin/stop-dfs.sh;stop-yarn.sh;mapred --daemon stop historyserver'
 
-``hdpuser@master-namenode:~$ source .bashrc`` --после сохранения файла .bashrc, загрузите его
+``hdpuser@vm-hdp-0:~$ source ~/.bashrc`` --после сохранения файла .bashrc, загрузите его
 
 - Создайте каталог данных Hadoop для (NameNode и DataNode)
 
-``hdpuser@master-namenode:~$ mkdir /bigdata/HadoopData``
+``hdpuser@vm-hdp-0:~$ mkdir /bigdata/HadoopData``
 
-``hdpuser@master-namenode:~$ mkdir /bigdata/HadoopData/namenode``      --*только на сервере NameNode*
+``hdpuser@vm-hdp-0:~$ mkdir /bigdata/HadoopData/namenode``      --*только на сервере NameNode*
 
-``hdpuser@master-namenode:~$ mkdir /bigdata/HadoopData/datanode``      --*на всех серверах DataNodes*
+``hdpuser@vm-hdp-0:~$ sudo mkdir /data/HadoopData``
+
+``hdpuser@vm-hdp-0:~$ sudo chown -R hdpuser:hdpuser /data/HadoopData && sudo chmod -R 770 /data/HadoopData``
+
+``hdpuser@vm-hdp-0:~$ mkdir /data/HadoopData/datanode``      --*на всех серверах DataNodes*
 
 - Конфигурирование Hadoop
 
-``hdpuser@master-namenode:~$ cd $HADOOP_CONF_DIR``  --проверьте переменные среды, которые вы только что добавили
+``hdpuser@vm-hdp-0:~$ cd $HADOOP_CONF_DIR``  --проверьте переменные среды, которые вы только что добавили
 
 - Измените файл: **core-site.xml**
 
-``hdpuser@master-namenode:/bigdata/hadoop-3.1.2/etc/hadoop$ vi core-site.xml``  --copy core-site.xml file <span style="color: red;">Возможно имеется в виду создать файл и скопировать в него это</span>
+``hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ nano core-site.xml``  --вставить конфигурацию ниже в файл core-site.xml
 
     <configuration>
        <property>
            <name>fs.defaultFS</name>
-           <value>hdfs://master-namenode:9000</value>
+           <value>hdfs://vm-hdp-0:9000</value>
        </property>
     </configuration>
 
@@ -289,7 +367,7 @@
 | :exclamation: | Параметр `dfs.namenode.data.dir` должен присутствовать только на сервере NameNode. Если на сервере NameNode необходима роль DataNode, то установите так же параметр `dfs.datanode.data.dir`.       |
 |---------------|:------------------------|
 
-``hdpuser@master-namenode:/bigdata/hadoop-3.1.2/etc/hadoop$ vi hdfs-site.xml``  --copy hdfs-site.xml file <span style="color: red;">Возможно имеется в виду создать файл и скопировать в него это</span>
+``hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ nano hdfs-site.xml``  --вставить конфигурацию ниже в hdfs-site.xml
 
     <configuration>
        <property>
@@ -298,7 +376,7 @@
        </property>
        <property>
            <name>dfs.datanode.data.dir</name>
-           <value>file:///bigdata/HadoopData/datanode</value>
+           <value>file:///data/HadoopData/datanode</value>
        </property>
        <property>
            <name>dfs.blocksize</name>
@@ -316,7 +394,7 @@
 
 - Modify file: **mapred-site.xml**
 
-``hdpuser@master-namenode:/bigdata/hadoop-3.1.2/etc/hadoop$ vi mapred-site.xml``  --copy mapred-site.xml file <span style="color: red;">Возможно имеется в виду создать файл и скопировать в него это</span>
+``hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ nano mapred-site.xml``  --вставить конфигурацию ниже в mapred-site.xml
 
     <configuration>
        <property>
@@ -325,11 +403,11 @@
        </property>
        <property>
            <name>mapreduce.jobhistory.address</name>
-           <value>master-namenode:10020</value>
+           <value>vm-hdp-0:10020</value>
        </property>
        <property>
            <name>mapreduce.jobhistory.webapp.address</name>
-           <value>master-namenode:19888</value>
+           <value>vm-hdp-0:19888</value>
        </property>
        <property>
            <name>mapreduce.jobhistory.intermediate-done-dir</name>
@@ -373,15 +451,15 @@
        </property>
        <property>
            <name>yarn.app.mapreduce.am.env</name>
-           <value>HADOOP_MAPRED_HOME=/bigdata/hadoop-3.1.2</value>
+           <value>HADOOP_MAPRED_HOME=/bigdata/hadoop-3.4.1</value>
        </property>
        <property>
            <name>mapreduce.map.env</name>
-           <value>HADOOP_MAPRED_HOME=/bigdata/hadoop-3.1.2</value>
+           <value>HADOOP_MAPRED_HOME=/bigdata/hadoop-3.4.1</value>
        </property>
        <property>
            <name>mapreduce.reduce.env</name>
-           <value>HADOOP_MAPRED_HOME=/bigdata/hadoop-3.1.2</value>
+           <value>HADOOP_MAPRED_HOME=/bigdata/hadoop-3.4.1</value>
        </property>
        <property>
            <name>mapreduce.application.classpath</name>
@@ -389,9 +467,9 @@
        </property>
     </configuration>
 
-- Modify file: **yarn-site.xml** <span style="color: red;">Возможно имеется в виду создать файл и скопировать в него это</span>
+- Измените файл: **yarn-site.xml** 
 
-``hdpuser@master-namenode:/bigdata/hadoop-3.1.2/etc/hadoop$ vi yarn-site.xml``  --copy yarn-site.xml file
+``hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ nano yarn-site.xml``  --вставить конфигурацию ниже в yarn-site.xml
 
     <configuration>
        <property>
@@ -400,23 +478,23 @@
        </property>
        <property>
            <name>yarn.resourcemanager.address</name>
-           <value>master-namenode:8050</value>
+           <value>vm-hdp-0:8050</value>
        </property>
        <property>
            <name>yarn.resourcemanager.scheduler.address</name>
-           <value>master-namenode:8030</value>
+           <value>vm-hdp-0:8030</value>
        </property>
        <property>
            <name>yarn.resourcemanager.resource-tracker.address</name>
-           <value>master-namenode:8025</value>
+           <value>vm-hdp-0:8025</value>
        </property>
        <property>
            <name>yarn.resourcemanager.admin.address</name>
-           <value>master-namenode:8011</value>
+           <value>vm-hdp-0:8011</value>
        </property>
        <property>
            <name>yarn.resourcemanager.webapp.address</name>
-           <value>master-namenode:8080</value>
+           <value>vm-hdp-0:8080</value>
        </property>
        <property>
            <name>yarn.nodemanager.env-whitelist</name>
@@ -424,11 +502,11 @@
        </property>
        <property>
            <name>yarn.resourcemanager.webapp.https.address</name>
-           <value>master-namenode:8090</value>
+           <value>vm-hdp-0:8090</value>
        </property>
        <property>
            <name>yarn.resourcemanager.hostname</name>
-           <value>master-namenode</value>
+           <value>vm-hdp-0</value>
        </property>
        <property>
            <name>yarn.resourcemanager.scheduler.class</name>
@@ -444,7 +522,7 @@
        </property>
        <property>
            <name>yarn.nodemanager.remote-app-log-dir</name>
-           <value>hdfs://master-namenode:9870/tmp/hadoop-yarn</value>
+           <value>hdfs://vm-hdp-0:9870/tmp/hadoop-yarn</value>
        </property>
        <property>
            <name>yarn.nodemanager.remote-app-log-dir-suffix</name>
@@ -460,65 +538,73 @@
        </property>
        <property>
            <name>yarn.log.server.url</name>
-           <value>http://master-namenode:19888/jobhistory/logs</value>
+           <value>http://vm-hdp-0:19888/jobhistory/logs</value>
        </property>
     </configuration>
 
-- Modify file: **hadoop-env.sh** <span style="color: red;">Возможно имеется в виду создать файл и скопировать в него это</span>
+- Измените файл: **hadoop-env.sh** 
 
 | :memo:        | Отредактируйте файл среды Hadoop, добавив следующие переменные среды в разделе "Установите здесь переменные среды, специфичные для Hadoop".:       |
 |---------------|:------------------------|
 
-``hdpuser@master-namenode:/bigdata/hadoop-3.1.2/etc/hadoop$ vi hadoop-env.sh``  --copy hadoop-env.sh
+``hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ nano hadoop-env.sh``  --вставить конфигурацию ниже в hadoop-env.sh
 
-    export JAVA_HOME=/bigdata/jdk1.8.0_241
+    export JAVA_HOME=/bigdata/jdk-11.0.0.2
     export HADOOP_LOG_DIR=/var/log/hadoop
-    export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=/bigdata/hadoop-3.1.2/lib/native"
-    export HADOOP_COMMON_LIB_NATIVE_DIR=/bigdata/hadoop-3.1.2/lib/native
+    export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=/bigdata/hadoop-3.4.1/lib/native"
+    export HADOOP_COMMON_LIB_NATIVE_DIR=/bigdata/hadoop-3.4.1/lib/native
+    export HDFS_DATANODE_OPTS="-Xms3g -Xmx6g" --для ограничения памяти для процессов
 
 - Create **workers** file
 
-``hdpuser@master-namenode:/bigdata/hadoop-3.1.2/etc/hadoop$ vi workers``  --copy workers file
+``hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ nano workers``  --вставте содержимое ниже в файл. Запись localhost можно удалить
 | :exclamation: | Строка записи для каждого сервера DataNode       |
 |---------------|:------------------------|
 
-    master-namenode
+    vm-hdp-0
 
 - Форматирование нового хранилища HDFS в NameNode
 
-``hdpuser@master-namenode:~$ hdfs namenode -format``
+``hdpuser@vm-hdp-0:~$ hdfs namenode -format``
 
 - Запуск и остановка Hadoop
 
-| :point_up:    | В принципе, чтобы запустить Hadoop, нам нужно всего лишь ввести `start-all.sh`. Однако ранее были созданы два псевдонима `Start_HADOOP` и `Stop_HADOOP` в переменных окружения, которые будут обеспечивать выполнение запуска и остановки Hadoop. Эти псевдонимы были созданы, чтобы избежать конфликтов с некоторыми командами, существующими в Spark, которые вскоре будут установлены на тех же серверах/ВМ. Те же правила будут применяться и в Spark. После завершения работы приложения вам необходимо запустить сервер истории заданий MapReduce, если вы хотите просмотреть журналы в веб-интерфейсе. Для этого были добавлены команды `mapred --daemon start historyserver` и `mapred --daemon stop historyserver` в два созданных псевдонима. |
+| :point_up:    | В принципе, чтобы запустить Hadoop, нам нужно всего лишь ввести `start-all.sh`. Однако ранее были созданы два псевдонима `start_hadoop` и `stop_hadoop` в переменных окружения, которые будут обеспечивать выполнение запуска и остановки Hadoop. Эти псевдонимы были созданы, чтобы избежать конфликтов с некоторыми командами, существующими в Spark, которые вскоре будут установлены на тех же серверах/ВМ. Те же правила будут применяться и в Spark. После завершения работы приложения вам необходимо запустить сервер истории заданий MapReduce, если вы хотите просмотреть журналы в веб-интерфейсе. Для этого были добавлены команды `mapred --daemon start historyserver` и `mapred --daemon stop historyserver` в два созданных псевдонима. |
 |---------------|:------------------------|
 
 ###### Запуск
 
-``hdpuser@master-namenode:~$ Start_HADOOP``
+    hdpuser@vm-hdp-0:~$ start_hadoop
+    Starting namenodes on [vm-hdp-0]
+    Starting datanodes
+    Starting secondary namenodes [vm-hdp-0]
+    Starting resourcemanager
+    Starting nodemanagers
 
 ###### Проверьте, запущены ли процессы Hadoop
 
-    hdpuser@master-namenode:~$ jps  --эта команда должна возвращать что-то вроде
-    1889 ResourceManager
-    1300 NameNode
-    1093 JobHistoryServer
-    1993 NodeManager
-    2426 Jps
-    1403 DataNode
-    1566 SecondaryNameNode
+    hdpuser@vm-hdp-0:~$ jps  --эта команда должна возвращать что-то вроде
+    2961 Jps
+    2067 DataNode
+    2504 ResourceManager
+    1981 NameNode
+    2254 SecondaryNameNode
+    2591 NodeManager
 
 ###### Веб-интерфейсы по умолчанию
 
 | Service   |      Address web      |  Default HTTP port |
 |-----------|-----------------------|-------------------:|
-| NameNode |  http://master-namenode:9870/ | 9870 |
-| ResourceManager |    http://master-namenode:8080/   |   8080 |
-| MapReduce JobHistory Server |    http://master-namenode:19888/   |   19888 |
+| NameNode |  http://vm-hdp-0.corp:9870/ | 9870 |
+| ResourceManager |    http://vm-hdp-0.corp:8080/   |   8080 |
+| MapReduce JobHistory Server |    http://vm-hdp-0.corp:19888/   |   19888 |
+
+###### Для примера можем загрузить файлы в HDFS
+``hdfs dfs -put /bigdata/openjdk-11.0.0.2_linux-x64.tar.gz /``
 
 ###### Остановка
 
-``hdpuser@master-namenode:~$ Stop_HADOOP``
+``hdpuser@vm-hdp-0:~$ Stop_HADOOP``
 
 &nbsp;
 &nbsp;
@@ -527,122 +613,104 @@
 
 &nbsp;
 
-В втором разделе мы перейдем к созданию многоузлового кластера. Будут рассмотрены три виртуальные машины (узла). Если вы хотите создать кластер, состоящий из более чем трех узлов, вы можете применить те же шаги, которые будут описаны ниже.
+В втором разделе мы перейдем к созданию многоузлового кластера. Будут рассмотрены три виртуальные машины (узла). Если вы хотите создать кластер, состоящий из более чем трех узлов, вы можете применить те же шаги, которые будут описаны ниже. Подключение новых узлов будут происходить плавно, без остановки кластера с сохранением данных.
 
 Предполагая, что имена хостов, ip-адреса и службы (NameNode и/или DataNode) трех узлов будут следующими:
 
 | Hostname   |      IP Address     |  NameNode |  DataNode
 |----------|-------------|:------:|:------:|
-| master-namenode |  192.168.1.72 | &check; | &check; |
-| slave-datanode-1 |    192.168.1.73   |   | &check; |
-| slave-datanode-2 |    192.168.1.74   |   | &check; |
+| vm-hdp-0 |  192.168.252.253 | &check; | &check; |
+| vm-hdp-1 |  192.168.252.252   |   | &check; |
+| vm-hdp-2 |  192.168.252.251   |   | &check; |
 
-Пока что у нас готова только одна машина (master-namenode). Нам нужно собрать и настроить две другие добавленные машины. Мы можем дважды клонировать машину master-namenode, тогда необходимо будет именить только некоторые параметры.
+Пока что у нас готова только одна машина (vm-hdp-0). Нам нужно собрать и настроить две другие добавленные машины. Мы можем дважды клонировать машину vm-hdp-0, тогда необходимо будет именить только некоторые параметры.
 
-## 1- Дважды клонируйте сервер master-namenode, созданный выше
+## 1- Дважды клонируйте сервер vm-hdp-0, созданный выше
 ### Команды с правами root
 > войдите в систему как пользователь root на двух клонированных серверах
 
-``hdpuser@master-namenode:~$ su root``
+``hdpuser@vm-hdp-0:~$ su root``
 
-- Измените имя хоста и настройте полное доменное имя (используя новые имена хостов как "slave-datanode-1" и "slave-datanode-2" и сохраняя то же полное доменное имя).
+- Измените имя хоста и настройте полное доменное имя (используя новые имена хостов как "vm-hdp-1" и "vm-hdp-2" и сохраняя то же полное доменное имя).
 
-> На первой клонированной машине (slave-datanode-1)
+> На первой клонированной машине (vm-hdp-1)
 
-``root@master-namenode:~# vi /etc/hostname``  --удалите существующее имя и напишите следующее
+``root@vm-hdp-0:~# nano /etc/hostname``  --удалите существующее имя и напишите следующее
 
-    slave-datanode-1
+    vm-hdp-1
 
-``root@master-namenode:~# vi /etc/hosts``  --ваш файл должен выглядеть следующим образом
+``root@vm-hdp-0:~# nano /etc/hosts``  --ваш файл должен выглядеть следующим образом
 
-    192.168.1.72    master-namenode.cluster.hdp     master-namenode
-    192.168.1.73    slave-datanode-1.cluster.hdp    slave-datanode-1
-    192.168.1.74    slave-datanode-2.cluster.hdp    slave-datanode-2
+    192.168.252.253    vm-hdp-0.corp    vm-hdp-0
+    192.168.252.252    vm-hdp-1.corp    vm-hdp-1
+    192.168.252.251    vm-hdp-2.corp    vm-hdp-2
 
-``root@master-namenode:~# hostname slave-datanode-1``
+``root@vm-hdp-0:~# hostname``  --должно вернуться
 
-``root@master-namenode:~# hostname``  --должно вернуться
+    vm-hdp-1
 
-    slave-datanode-1
+``root@vm-hdp-0:~# hostname -f``  --должно вернуться
 
-``root@master-namenode:~# hostname -f``  --должно вернуться
+    vm-hdp-1.corp
 
-    slave-datanode-1.cluster.hdp
+> На второй клонированной машине (vm-hdp-2 server)
 
-> На второй клонированной машине (slave-datanode-2 server)
+``root@vm-hdp-0:~# nano /etc/hostname``  --удалите существующее имя и напишите следующее
 
-``root@master-namenode:~# vi /etc/hostname``  --удалите существующее имя и напишите следующее
+    vm-hdp-2
 
-    slave-datanode-2
+``root@vm-hdp-0:~# nano /etc/hosts``  --ваш файл должен выглядеть следующим образом
 
-``root@master-namenode:~# vi /etc/hosts``  --ваш файл должен выглядеть следующим образом
+    192.168.252.253    vm-hdp-0.corp    vm-hdp-0
+    192.168.252.252    vm-hdp-1.corp    vm-hdp-1
+    192.168.252.251    vm-hdp-2.corp    vm-hdp-2
 
-    192.168.1.72    master-namenode.cluster.hdp     master-namenode
-    192.168.1.73    slave-datanode-1.cluster.hdp    slave-datanode-1
-    192.168.1.74    slave-datanode-2.cluster.hdp    slave-datanode-2
+``root@vm-hdp-0:~# hostname``  --должно вернуться
 
-``root@master-namenode:~# hostname slave-datanode-2``
+    vm-hdp-2
 
-``root@master-namenode:~# hostname``  --должно вернуться
+``root@vm-hdp-0:~# hostname -f``  --должно вернуться
 
-    slave-datanode-2
-
-``root@master-namenode:~# hostname -f``  --должно вернуться
-
-    slave-datanode-2.cluster.hdp
+    vm-hdp-2.corp
 
 
 
-- Отредактируйте файл hosts на сервере "master-namenode"
+- Отредактируйте файл hosts на сервере "vm-hdp-0"
 
-> войдите в систему как пользователь hdpuser на сервере "master-namenode". Его файл hosts должен иметь то же содержимое, что и файлы hosts других узлов.
+> войдите в систему как пользователь hdpuser на сервере "vm-hdp-0". Его файл hosts должен иметь то же содержимое, что и файлы hosts других узлов.
 
-``hdpuser@master-namenode:~$ sudo vi /etc/hosts``  --your file should look like the below
+``hdpuser@vm-hdp-0:~$ sudo nano /etc/hosts``  --your file should look like the below
 
-    192.168.1.72    master-namenode.cluster.hdp     master-namenode
-    192.168.1.73    slave-datanode-1.cluster.hdp    slave-datanode-1
-    192.168.1.74    slave-datanode-2.cluster.hdp    slave-datanode-2
+    192.168.252.253    vm-hdp-0.corp    vm-hdp-0
+    192.168.252.252    vm-hdp-1.corp    vm-hdp-1
+    192.168.252.251    vm-hdp-2.corp    vm-hdp-2
 
-- Настройка SSH без пароля между службами Hadoop
+- Настройка SSH без пароля между службами Hadoop (с NN на DN)
 
-``hdpuser@master-namenode:~$ ssh-copy-id -i ~/.ssh/id_rsa.pub hdpuser@slave-datanode-1``
 
-``hdpuser@master-namenode:~$ ssh hdpuser@slave-datanode-1``
-
-    Are you sure you want to continue connecting (yes/no)? yes
-
-``hdpuser@slave-datanode-1:~$ exit``
-
-``hdpuser@master-namenode:~$ ssh-copy-id -i ~/.ssh/id_rsa.pub hdpuser@slave-datanode-2``
-
-``hdpuser@master-namenode:~$ ssh hdpuser@slave-datanode-2``
-
-    Are you sure you want to continue connecting (yes/no)? yes
-
-``hdpuser@slave-datanode-2:~$ exit``
 
 ### Настройка Hadoop
-- Отредактируйте файл **workers** на сервере NameNode (master-namenode)
+- Отредактируйте файл **workers** на сервере NameNode (vm-hdp-0)
 
 | :warning: WARNING          |
 |:---------------------------|
-| Цель здесь состоит в том, чтобы настроить, в частности, рабочий файл в качестве NameNode или главного сервера (здесь это master-namenode). Поскольку это позже организует работу всех серверов DataNode, он должен знать имена их узлов, указав их в своем рабочем файле. Этот файл является всего лишь вспомогательным файлом, который используется скриптами hadoop для запуска соответствующих служб на главном и подчиненных узлах. Добавьте рабочий файл только на главном узле (master-namenode). Добавьте только имя или ip-адреса главного и всех подчиненных узлов. Если в файле есть запись для localhost, вы можете удалить ее. Что касается рабочих файлов серверов slave-datanode-1 и slave-datanode-2, отформатируйте их, оставив пустыми.     |
+| Цель здесь состоит в том, чтобы настроить, в частности, рабочий файл в качестве NameNode или главного сервера (здесь это vm-hdp-0). Поскольку это позже организует работу всех серверов DataNode, он должен знать имена их узлов, указав их в своем рабочем файле. Этот файл является всего лишь вспомогательным файлом, который используется скриптами hadoop для запуска соответствующих служб на главном и подчиненных узлах. Добавьте рабочий файл только на главном узле (vm-hdp-0). Добавьте только имя или ip-адреса главного и всех подчиненных узлов. Если в файле есть запись для localhost, вы можете удалить ее. Что касается рабочих файлов серверов vm-hdp-1 и vm-hdp-2, отформатируйте их, оставив пустыми.     |
 
-``hdpuser@master-namenode:~$ vi workers``  --строка записи для каждого сервера DataNode (в нашем случае все машины рассматриваются как DataNode)
+``hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ nano workers``  --строка записи для каждого сервера DataNode (в нашем случае все машины рассматриваются как DataNode)
 
-    master-namenode   #удалите эту строку из рабочего файла, если вы не хотите, чтобы этот узел был DataNode
-    slave-datanode-1
-    slave-datanode-2
+    vm-hdp-0   #удалите эту строку из рабочего файла, если вы не хотите, чтобы этот узел был DataNode
+    vm-hdp-1
+    vm-hdp-2
 
 - Измените файл: **hdfs-site.xml**
 
 | :warning: WARNING          |
 |:---------------------------|
-| Если вам нужно, чтобы данные реплицировались более чем в один узел данных, вы должны изменить номер репликации, указанный в файлах **hdfs-site.xml** на всех узлах. Это число не может быть больше, чем количество узлов. Мы собираемся установить его равным 2. Это означает, что для каждого файла, хранящегося в HDFS, будет одна избыточная репликация этого файла на каком-либо другом узле кластера.    |
+| Если вам нужно, чтобы данные реплицировались более чем в один узел данных, вы должны изменить номер репликации, указанный в файлах **hdfs-site.xml** на всех узлах. Это число не может быть больше, чем количество узлов. Мы собираемся установить его равным 2. Это означает, что для каждого файла, хранящегося в HDFS, будет одна избыточная репликация этого файла на каком-либо другом узле кластера. А так же добавляем параметр dfs.hosts.exclude с указанием на файл dfs.exclude. У нем указываются ноды для вывода из эксплуатации или проведения долгого обслуживания    |
 
-> На сервере NameNode & DataNode (master-namenode):
+> На сервере NameNode & DataNode (vm-hdp-0): 
 
-``hdpuser@master-namenode:/bigdata/hadoop-3.1.2/etc/hadoop$ vi hdfs-site.xml``  --copy hdfs-site.xml file
+``hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ nano hdfs-site.xml``  --обновление конфигурации hdfs-site.xml
 
     <configuration>
        <property>
@@ -651,7 +719,7 @@
        </property>
        <property>
            <name>dfs.datanode.data.dir</name>
-           <value>file:///bigdata/HadoopData/datanode</value>
+           <value>file:///data/HadoopData/datanode</value>
        </property>
        <property>
            <name>dfs.blocksize</name>
@@ -665,16 +733,22 @@
            <name>dfs.permissions</name>
            <value>false</value>
        </property>
+       <property>
+           <name>dfs.hosts.exclude</name>
+           <value>/bigdata/hadoop-3.4.1/etc/hadoop/dfs.exclude</value>
+       </property>
     </configuration>
 
-> На серверах DataNode (slave-datanode-1 и slave-datanode-2):
+``nano dfs.exclude`` --создание файла
 
-``hdpuser@slave-datanode-1:/bigdata/hadoop-3.1.2/etc/hadoop$ vi hdfs-site.xml``  --copy hdfs-site.xml file
+> На серверах DataNode (vm-hdp-1 и vm-hdp-2):
+
+``hdpuser@vm-hdp-1:/bigdata/hadoop-3.4.1/etc/hadoop$ nano hdfs-site.xml``  --обновление конфигурации hdfs-site.xml
 
     <configuration>
        <property>
            <name>dfs.datanode.data.dir</name>
-           <value>file:///bigdata/HadoopData/datanode</value>
+           <value>file:///data/HadoopData/datanode</value>
        </property>
        <property>
            <name>dfs.blocksize</name>
@@ -690,12 +764,12 @@
        </property>
     </configuration>
 
-``hdpuser@slave-datanode-2:/bigdata/hadoop-3.1.2/etc/hadoop$ vi hdfs-site.xml``  --copy hdfs-site.xml file
+``hdpuser@vm-hdp-2:/bigdata/hadoop-3.4.1/etc/hadoop$ nano hdfs-site.xml``  --обновление конфигурации hdfs-site.xml
 
     <configuration>
        <property>
            <name>dfs.datanode.data.dir</name>
-           <value>file:///bigdata/HadoopData/datanode</value>
+           <value>file:///data/HadoopData/datanode</value>
        </property>
        <property>
            <name>dfs.blocksize</name>
@@ -711,149 +785,168 @@
        </property>
     </configuration>
 
-- Очистите некоторые старые файлы на всех узлах <span style="color: red;">Проверить/попробовать сделать через добавление новых нод. А не через создание нового кластера!</span>
+- Очистите некоторые старые файлы на всех узлах
 
-``hdpuser@master-namenode:~$ rm -rf /bigdata/HadoopData/namenode/*``
+``hdpuser@vm-hdp-1:~$ rm -rf /bigdata/HadoopData/namenode/*``
 
-``hdpuser@master-namenode:~$ rm -rf /bigdata/HadoopData/datanode/*``
+``hdpuser@vm-hdp-2:~$ rm -rf /bigdata/HadoopData/namenode/*``
 
-``hdpuser@slave-datanode-1:~$ rm -rf /bigdata/HadoopData/datanode/*``
+``hdpuser@vm-hdp-1:~$ rm -rf /data/HadoopData/datanode/*``
 
-``hdpuser@slave-datanode-2:~$ rm -rf /bigdata/HadoopData/datanode/*``
+``hdpuser@vm-hdp-2:~$ rm -rf /data/HadoopData/datanode/*``
 
 
 ## 2- Запуск и остановка Hadoop на главном узле-namenode
-
-- Форматирование нового каталога HDFS на NameNode
-
-``hdpuser@master-namenode:~$ hdfs namenode -format``
-
-![format1](/images/format1.png)
-![format2](/images/format2.png)
 
 - Запуск Hadoop
 
 ###### Запуск
 
-``hdpuser@master-namenode:~$ Start_HADOOP``
+``hdpuser@vm-hdp-0:~$ start_hadoop`` --При запуске будет ругаться, что часть процессов запущена. Но не запущенные запустятся.
 
 ![starthadoop](/images/starthadoop.png)
 
-###### Проверьте, запущены ли процессы Hadoop в master-namenode
+###### Проверьте, запущены ли процессы Hadoop в vm-hdp-0
 
-``hdpuser@master-namenode:~$ jps``
+``hdpuser@vm-hdp-0:~$ jps``
 
 ![namenodejps](/images/namenodejps.png)
 
-###### Проверьте, запущены ли процессы Hadoop на подчиненном сервере-datanode-1
+###### Проверьте, запущены ли процессы Hadoop на vm-hdp-1
 
-``hdpuser@master-datanode-1:~$ jps``
+``hdpuser@mvm-hdp-1:~$ jps``
 
 ![datanode1jps](/images/datanode1jps.png)
 
-###### Проверьте, запущены ли процессы Hadoop на slave-datanode-2
+###### Проверьте, запущены ли процессы Hadoop на vm-hdp-2
 
-``hdpuser@master-datanode-2:~$ jps``
+``hdpuser@vm-hdp-2:~$ jps``
 
 ![datanode2jps](/images/datanode2jps.png)
 
+##### Но из-за того, что на vm-hdp-0 процесс NN и DN уже работали, то конфигурационный файл hdfs-site.xml не прочитался и изменения dfs.replication на 2 не применились. Для того, чтобы это исправить мы переведем DN на vm-hdp-0 сначала в Decommissioning (в этом состянии начнутся перераспределяться блоки на оставшиеся наши ноды), а далее нода vm-hdp-0 перейдет сама в режим Decommissioned( режим в котором DN процесс можно перезагрузить для применения конфигурации)
+
 ###### Веб-интерфейсы по умолчанию
-> NameNode: http://master-namenode:9870/
+> NameNode: http://vm-hdp-0.corp:9870/
 
 ![NameNode](/images/master-node9870.png)
 
-> ResourceManager: http://master-namenode:8080/
+> ResourceManager: http://vm-hdp-0.corp:8080/
 
 ![ResourceManager](/images/master-node8080.png)
 
+###### Для перевода ноды в Decommissioning необходимо добавить название ноды vm-hdp-0 в файл dfs.exclude
+
+``nano hadoop/dfs.exclude`` --добавляем в файл строку
+
+    vm-hdp-0.corp
+
+> После необходимо выполнить команду ``hdfs dfsadmin -refreshNodes`` NN читает файл и меняет статус у ноды. Статусы нод можно смотреть в веб интерфейсе или из отчета
+
 ###### Получить отчет
 
-    hdpuser@master-namenode:~$ hdfs dfsadmin -report     --эта команда должна возвращать что-то вроде
-    Configured Capacity: 59836907520 (55.73 GB)
-    Present Capacity: 27630944256 (25.73 GB)
-    DFS Remaining: 27630858240 (25.73 GB)
-    DFS Used: 86016 (84 KB)
-    DFS Used%: 0.00%
+    hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ hdfs dfsadmin -report
+    Configured Capacity: 210176425984 (195.74 GB)
+    Present Capacity: 199401275392 (185.71 GB)
+    DFS Remaining: 198231064576 (184.62 GB)
+    DFS Used: 1170210816 (1.09 GB)
+    DFS Used%: 0.59%
     Replicated Blocks:
-            Under replicated blocks: 0
-            Blocks with corrupt replicas: 0
-            Missing blocks: 0
-            Missing blocks (with replication factor 1): 0
-            Low redundancy blocks with highest priority to recover: 0
-            Pending deletion blocks: 0
-    Erasure Coded Block Groups:
-            Low redundancy block groups: 0
-            Block groups with corrupt internal blocks: 0
-            Missing block groups: 0
-            Low redundancy blocks with highest priority to recover: 0
-            Pending deletion blocks: 0
+    	Under replicated blocks: 0
+    	Blocks with corrupt replicas: 0
+    	Missing blocks: 0
+    	Missing blocks (with replication factor 1): 0
+    	Low redundancy blocks with highest priority to recover: 0
+    	Pending deletion blocks: 0
+    Erasure Coded Block Groups: 
+    	Low redundancy block groups: 0
+    	Block groups with corrupt internal blocks: 0
+    	Missing block groups: 0
+    	Low redundancy blocks with highest priority to recover: 0
+    	Pending deletion blocks: 0
 
     -------------------------------------------------
     Live datanodes (3):
 
-    Name: 192.168.1.72:9866 (master-namenode)
-    Hostname: master-namenode
+    Name: 192.168.252.251:9866 (vm-hdp-2.corp)
+    Hostname: vm-hdp-2.corp
     Decommission Status : Normal
-    Configured Capacity: 19945635840 (18.58 GB)
-    DFS Used: 28672 (28 KB)
-    Non DFS Used: 9707601920 (9.04 GB)
-    DFS Remaining: 9201225728 (8.57 GB)
-    DFS Used%: 0.00%
-    DFS Remaining%: 46.13%
+    Configured Capacity: 105088212992 (97.87 GB)
+    DFS Used: 594341888 (566.81 MB)
+    Non DFS Used: 2142208 (2.04 MB)
+    DFS Remaining: 99106295808 (92.30 GB)
+    DFS Used%: 0.57%
+    DFS Remaining%: 94.31%
     Configured Cache Capacity: 0 (0 B)
     Cache Used: 0 (0 B)
     Cache Remaining: 0 (0 B)
     Cache Used%: 100.00%
     Cache Remaining%: 0.00%
-    Xceivers: 1
-    Last contact: Wed Apr 15 16:44:05 CEST 2020
-    Last Block Report: Wed Apr 15 16:42:00 CEST 2020
-    Num of Blocks: 0
+    Xceivers: 0
+    Last contact: Tue Mar 24 22:34:01 MSK 2026
+    Last Block Report: Tue Mar 24 22:13:39 MSK 2026
+    Num of Blocks: 5
 
 
-    Name: 192.168.1.73:9866 (slave-datanode-1)
-    Hostname: slave-datanode-1
+    Name: 192.168.252.252:9866 (vm-hdp-1.corp)
+    Hostname: vm-hdp-1.corp
     Decommission Status : Normal
-    Configured Capacity: 19945635840 (18.58 GB)
-    DFS Used: 28672 (28 KB)
-    Non DFS Used: 9695444992 (9.03 GB)
-    DFS Remaining: 9213382656 (8.58 GB)
-    DFS Used%: 0.00%
-    DFS Remaining%: 46.19%
+    Configured Capacity: 105088212992 (97.87 GB)
+    DFS Used: 575868928 (549.19 MB)
+    Non DFS Used: 2142208 (2.04 MB)
+    DFS Remaining: 99124768768 (92.32 GB)
+    DFS Used%: 0.55%
+    DFS Remaining%: 94.33%
     Configured Cache Capacity: 0 (0 B)
     Cache Used: 0 (0 B)
     Cache Remaining: 0 (0 B)
     Cache Used%: 100.00%
     Cache Remaining%: 0.00%
-    Xceivers: 1
-    Last contact: Wed Apr 15 16:44:04 CEST 2020
-    Last Block Report: Wed Apr 15 16:41:56 CEST 2020
-    Num of Blocks: 0
+    Xceivers: 0
+    Last contact: Tue Mar 24 22:34:02 MSK 2026
+    Last Block Report: Tue Mar 24 22:26:26 MSK 2026
+    Num of Blocks: 5
 
 
-    Name: 192.168.1.74:9866 (slave-datanode-2)
-    Hostname: slave-datanode-2
-    Decommission Status : Normal
-    Configured Capacity: 19945635840 (18.58 GB)
-    DFS Used: 28672 (28 KB)
-    Non DFS Used: 9692577792 (9.03 GB)
-    DFS Remaining: 9216249856 (8.58 GB)
-    DFS Used%: 0.00%
-    DFS Remaining%: 46.21%
+    Name: 192.168.252.253:9866 (vm-hdp-0.corp)
+    Hostname: vm-hdp-0.corp
+    Decommission Status : Decommissioned
+    Configured Capacity: 105088212992 (97.87 GB)
+    DFS Used: 1170206720 (1.09 GB)
+    Non DFS Used: 2142208 (2.04 MB)
+    DFS Remaining: 98530430976 (91.76 GB)
+    DFS Used%: 1.11%
+    DFS Remaining%: 93.76%
     Configured Cache Capacity: 0 (0 B)
     Cache Used: 0 (0 B)
     Cache Remaining: 0 (0 B)
     Cache Used%: 100.00%
     Cache Remaining%: 0.00%
-    Xceivers: 1
-    Last contact: Wed Apr 15 16:44:04 CEST 2020
-    Last Block Report: Wed Apr 15 16:41:56 CEST 2020
-    Num of Blocks: 0
+    Xceivers: 0
+    Last contact: Tue Mar 24 22:34:01 MSK 2026
+    Last Block Report: Tue Mar 24 17:42:27 MSK 2026
+    Num of Blocks: 10
 
+###### Далее, когда мы убедились,что нода в статусе Decommissioned, необходимо остановить процесс DN на ноде с помощью команды ``hdfs --daemon stop datanode``. Проверяем статус ``hdfs --daemon status datanode`` или ``jps``.
+
+    hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ hdfs --daemon status datanode
+    datanode is stopped.
+    hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.1/etc/hadoop$ jps
+    5457 NameNode
+    3329 ResourceManager
+    3077 SecondaryNameNode
+    6009 NodeManager
+    12490 Jps
+
+###### Теперь можно запустить процесс ``hdfs --daemon start datanode``, удаляем ноду из файла dfs.exclude и обновляем информацию о нодах ``hdfs dfsadmin -refreshNodes`` и проверяем через отчет или в веб интерфейсе.
+
+###### Но у уже имеющихся файлов будет реплива 1, когда по умолчанию для новых файлов будет 2. Чтобы это исправить, можно запустить команду для изменения количества реплик для старых файлов. Для проверки работы этой задачи, можно использовать команду ``hdfs fsck /``, которая будет показывать блоки, для которых заплпнирована дополнительная репликация.
+
+``hdfs dfs -setrep -R 2 /``
 
 ###### Остановка Hadoop
 
-``hdpuser@master-namenode:~$ Stop_HADOOP``
+``hdpuser@vm-hdp-0:~$ stop_hadoop``
 
 ![stophadoop](/images/stophadoop.png)
 
