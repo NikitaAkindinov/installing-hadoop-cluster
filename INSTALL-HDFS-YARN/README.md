@@ -213,16 +213,16 @@ exit # Выйти из системы
 ssh hdpuser@vm-hdp-0 # Повторить SSH подключение
 exit # Выйти из системы
 ```
-- Создание необходимых каталогов:
-```bash
-sudo mkdir /var/log/hadoop /bigdata &&
-sudo chown -R hdpuser:hdpuser /var/log/hadoop /bigdata &&
-sudo chmod -R 770 /var/log/hadoop /bigdata
-```
+
 ## 2 - Установка JDK и Hadoop
 ### 2.1 Установка Java
 ---
-
+- Создание каталога для дистрибутивов:
+```bash
+sudo mkdir /bigdata &&
+sudo chown -R hdpuser:hdpuser /bigdata &&
+sudo chmod -R 770 /bigdata
+```
 - Откройте страницу с загрузкой дистрибутива [JDK 21][java], скопируйте ссылку на дистрибутив и следуйте инструкциям по установке:
 
 [java]: https://jdk.java.net/java-se-ri/21
@@ -230,7 +230,9 @@ sudo chmod -R 770 /var/log/hadoop /bigdata
 ```bash
 cd /bigdata &&
 wget https://download.java.net/openjdk/jdk21/ri/openjdk-21+35_linux-x64_bin.tar.gz &&
-tar -xzvf openjdk-21+35_linux-x64_bin.tar.gz
+tar -xzf /bigdata/openjdk-21+35_linux-x64_bin.tar.gz -C /opt &&
+sudo ln -s /opt/jdk-21 /opt/hadoop-jdk &&
+sudo chown -R $(whoami):$(whoami) /opt/jdk-21 /opt/hadoop-jdk
 ```
 
 - Настройка переменных среды
@@ -242,7 +244,7 @@ nano ~/.bashrc
 export PATH=$HOME/.local/bin:$HOME/bin:$PATH
 
 # Setup JAVA Environment variables
-export JAVA_HOME=/bigdata/jdk-21
+export JAVA_HOME=/opt/hadoop-jdk
 export PATH=$JAVA_HOME/bin:$PATH
 export PATH=$HOME/.local/bin:$HOME/bin:$PATH
 export PATH=$JAVA_HOME/bin:$PATH
@@ -270,14 +272,19 @@ OpenJDK 64-Bit Server VM (build 21+35-2513, mixed mode, sharing)
 ```bash
 cd /bigdata &&
 wget https://archive.apache.org/dist/hadoop/common/hadoop-3.4.3/hadoop-3.4.3.tar.gz &&
-tar -zxvf hadoop-3.4.3.tar.gz
+tar -zxf /bigdata/hadoop-3.4.3.tar.gz -C /opt &&
+sudo ln -s /opt/hadoop-3.4.3 /opt/hadoop &&
+sudo mkdir -p /var/log/hadoop 
+sudo chown -R $(whoami):$(whoami) /opt/hadoop-3.4.3 /opt/hadoop /var/log/hadoop &&
+sudo chmod -R 770 /opt/hadoop-3.4.3 /opt/hadoop /var/log/hadoop
 ```
+
 
 - Установите следующие переменные среды в ``~/.bashrc``  
 ```bash
 # добавьте следующее после раздела "Переменные среды Java" в файл .bashrc
 # Setup Hadoop Environment variables
-export HADOOP_HOME=/bigdata/hadoop-3.4.3
+export HADOOP_HOME=/opt/hadoop
 export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop
 export HADOOP_NAMENODE_OPTS="-XX:+UseParallelGC"
 export HADOOP_MAPRED_HOME=$HADOOP_HOME
@@ -297,11 +304,11 @@ export HADOOP_CLASSPATH=$HADOOP_CONF_DIR:$HADOOP_COMMON_HOME/*:$HADOOP_COMMON_HO
 # Control Hadoop
 alias start_hadoop='$HADOOP_HOME/sbin/start-dfs.sh;'
 alias stop_hadoop='$HADOOP_HOME/sbin/stop-dfs.sh;'
-# Eсли планируете использовать HDFS, YARN, MR, то вставьте две следующих строки
 
+# Eсли планируете использовать HDFS, YARN, MR, то вставьте две следующих строки
 # Control Hadoop
-#alias start_hadoop='$HADOOP_HOME/sbin/start-dfs.sh;start-yarn.sh;mapred --daemon start historyserver'
-#alias stop_hadoop='$HADOOP_HOME/sbin/stop-dfs.sh;stop-yarn.sh;mapred --daemon stop historyserver'
+alias start_hadoop='$HADOOP_HOME/sbin/start-dfs.sh;start-yarn.sh;mapred --daemon start historyserver'
+alias stop_hadoop='$HADOOP_HOME/sbin/stop-dfs.sh;stop-yarn.sh;mapred --daemon stop historyserver'
 ```
 
 - После сохранения файла .bashrc, примените его командой ``source ~/.bashrc``
@@ -309,11 +316,9 @@ alias stop_hadoop='$HADOOP_HOME/sbin/stop-dfs.sh;'
 - Создайте каталог данных Hadoop для (NameNode и DataNode)
 
 ```bash
-mkdir /bigdata/HadoopData      # только на сервере NameNode
-mkdir /bigdata/HadoopData/namenode
-sudo mkdir /data/HadoopData      # на всех серверах DataNodes
-mkdir /data/HadoopData/datanode
-sudo chown -R hdpuser:hdpuser /data/HadoopData &&
+mkdir -p /bigdata/HadoopData/namenode # только на сервере NameNode
+mkdir -p /data/HadoopData/datanode # на всех серверах DataNodes
+sudo chown -R $(whoami):$(whoami) /data/HadoopData &&
 sudo chmod -R 770 /data/HadoopData
 ```
 
@@ -425,15 +430,15 @@ nano mapred-site.xml # откройте файл для редактирован
    </property>
    <property>
        <name>yarn.app.mapreduce.am.env</name>
-       <value>HADOOP_MAPRED_HOME=/bigdata/hadoop-3.4.3</value>
+       <value>HADOOP_MAPRED_HOME=/opt/hadoop</value>
    </property>
    <property>
        <name>mapreduce.map.env</name>
-       <value>HADOOP_MAPRED_HOME=/bigdata/hadoop-3.4.3</value>
+       <value>HADOOP_MAPRED_HOME=/opt/hadoop</value>
    </property>
    <property>
        <name>mapreduce.reduce.env</name>
-       <value>HADOOP_MAPRED_HOME=/bigdata/hadoop-3.4.3</value>
+       <value>HADOOP_MAPRED_HOME=/opt/hadoop</value>
    </property>
    <property>
        <name>mapreduce.application.classpath</name>
@@ -526,17 +531,17 @@ nano yarn-site.xml # откройте файл для редактировани
 |---------------|:------------------------|
 
 ```bash
-export JAVA_HOME=/bigdata/jdk-21
+export JAVA_HOME=/opt/hadoop-jdk
 export HADOOP_LOG_DIR=/var/log/hadoop
-export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=/bigdata/hadoop-3.4.3/lib/native"
-export HADOOP_COMMON_LIB_NATIVE_DIR=/bigdata/hadoop-3.4.3/lib/native
+export HADOOP_OPTS="$HADOOP_OPTS -Djava.library.path=/opt/hadoop/lib/native"
+export HADOOP_COMMON_LIB_NATIVE_DIR=/opt/hadoop/lib/native
 #export HDFS_DATANODE_OPTS="-Xms3g -Xmx6g" --для ограничения памяти для процессов
 ```
 
 
 - Create **workers** file
 ```bash
-hdpuser@vm-hdp-0:/bigdata/hadoop-3.4.3/etc/hadoop$ nano workers
+nano $HADOOP_HOME/etc/hadoop/workers
 
 #вставте содержимое ниже в файл. Запись localhost можно удалить
 
@@ -545,7 +550,7 @@ vm-hdp-0
 - Форматирование нового хранилища HDFS в NameNode
 
 ```bash
-hdpuser@vm-hdp-0:~$ hdfs namenode -format
+hdfs namenode -format
 ```
 - Запуск и остановка Hadoop
 
@@ -608,7 +613,7 @@ hdpuser@vm-hdp-0:~$ stop_hadoop
 
 Пока что у нас готова только одна машина (vm-hdp-0). Нам нужно собрать и настроить две другие добавленные машины. Мы можем дважды клонировать машину vm-hdp-0, тогда необходимо будет именить только некоторые параметры.
 
-## 1- Дважды клонируйте сервер vm-hdp-0, созданный выше
+## 1 - Дважды клонируйте сервер vm-hdp-0, созданный выше
 ### Команды с правами root
 > войдите в систему как пользователь root на двух клонированных серверах
 
